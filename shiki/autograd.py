@@ -11,12 +11,16 @@ ScalarType = Union[np.ndarray, float]
 Computation Node in the Computation Graph.
 """
 class Node(object):
-    def __init__(self):
+    def __init__(self,
+                 name : Optional[str] = None):
         self.input_vals : List["Node"] = []
         self.op : Optional["Operation"] = None
         self.const_attr : Optional[ScalarType] = None
 
         # TODO(cycloidzzz) : a reserved field `name` for debugging use?
+        self.name = "Node "
+        if name is not None:
+            self.name = name
 
     def __add__(self, rhs) -> "Node":
         if is_scalar_type(rhs):
@@ -26,9 +30,9 @@ class Node(object):
 
     def __mul__(self, rhs) -> "Node":
         if is_scalar_type(rhs):
-            return add_const_op(self, rhs)
+            return mul_const_op(self, rhs)
         else:
-            return add_op(self, rhs)
+            return mul_op(self, rhs)
 
     __radd__ = __add__
     __rmul__ = __mul__
@@ -38,8 +42,8 @@ class Node(object):
 Base class for Tensor Operation of Nodes, which does not hold any data.
 """
 class Operation(ABC):
-    def __call__(self):
-        new_node : Node = Node()
+    def __call__(self, name: Optional[str] = None):
+        new_node : Node = Node(name=name)
         new_node.op = self
         return new_node
     
@@ -57,8 +61,7 @@ class Operation(ABC):
 class PlaceholderOperation(Operation):
     def __call__(self, 
                  name : str) -> Node:
-        new_node : Node = Operation.__call__(self)
-        new_node.name = name
+        new_node : Node = Operation.__call__(self, name = name)
         
         return new_node
     
@@ -74,11 +77,53 @@ class PlaceholderOperation(Operation):
         assert false, "Placeholder Op : Cannot calculate the gradient value for Placeholder Operation."
 
 
+class OnesLikeOperation(Operation):
+    def __call__(self,
+                 node_a : Node) -> Node:
+        new_name : str = f"OnesLike({node_a.name})"
+        new_node : Node = Operation.__call__(self, name=new_name)
+        new_node.input_vals : List[Node] = [node_a]
+        
+        return new_node
+
+    def compute(self,
+                ctx : Node,
+                input_vals : List[ScalarType]) -> ScalarType:
+        return np.ones_like(input_vals[0])
+
+    def gradient(self,
+                ctx : Node,
+                out_grad : Node) -> List[Node]:
+        node_a, = ctx.input_vals
+        return [zeros_like_op(node_a)]
+        
+
+class ZerosLikeOperation(Operation):
+    def __call__(self,
+                node_a : Node) -> Node:
+        new_name : str = f"ZerosLike({node_a.name})"
+        new_node : Node = Operation.__call__(self, name=new_name)
+        new_ndoe.input_vals : List[Node] = [node_a]
+        return new_node
+
+    def compute(self,
+                ctx : Node,
+                input_vals : List[ScalarType]) -> ScalarType:
+        return np.zeros_like(input_vals[0])
+
+    def gradient(self,
+                ctx : Node,
+                out_grad : Node) -> List[Node]:
+        node_a, = ctx.input_vals
+        return [zeros_like_op(node_a)]
+
+
 class AddOperation(Operation):
     def __call__(self, 
                  node_a : Node,
                  node_b : Node) -> Node:
-        new_node : Node = Operation.__call__(self)
+        new_name : str = f"({node_a.name} + {node_b.name})"
+        new_node : Node = Operation.__call__(self, name = new_name)
         new_node.input_vals = [node_a, node_b]
         return new_node
 
@@ -95,7 +140,8 @@ class AddOperation(Operation):
 
 class AddByConstOperation(Operation):
     def __call__(self, node_a : Node, const_attr : ScalarType) -> Node:
-        new_node : Node = Operation.__call__(self)
+        name : str = f"({node_a.name} + {const_attr})"
+        new_node : Node = Operation.__call__(self, name=name)
         new_node.input_vals = [node_a]
         new_node.const_attr = const_attr
         return new_node
@@ -113,7 +159,8 @@ class AddByConstOperation(Operation):
 
 class MulOperation(Operation):
     def __call__(self, node_a : Node, node_b : Node) -> Node:
-        new_node : Node = Operation.__call__(self)
+        new_name : str = f"({node_a.name} * {node_b.name})"
+        new_node : Node = Operation.__call__(self, name=new_name)
         new_node.input_vals = [node_a, node_b]
 
         return new_node
@@ -134,7 +181,8 @@ class MulOperation(Operation):
 
 class MulByConstOperation(Operation):
     def __call__(self, node_a : Node, const_attr : ScalarType) -> Node:
-        new_node : Node = Operation.__call__(self)
+        new_name : str = f"({node_a.name} * {const_attr})"
+        new_node : Node = Operation.__call__(self, name=new_name)
         new_node.input_vals = [node_a]
         new_node.const_attr = const_attr
 
@@ -153,7 +201,8 @@ class MulByConstOperation(Operation):
 
 class TransposeOperation(Operation):
     def __call__(self, node_a : Node) -> Node:
-        new_node : Node = Operation.__call__(self)
+        new_name : str = f"{node_a.name}.transpose()"
+        new_node : Node = Operation.__call__(self, name=new_name)
         new_node.input_vals = [node_a]
 
         return new_node
@@ -171,7 +220,8 @@ class TransposeOperation(Operation):
 
 class MatMulOperation(Operation):
     def __call__(self, node_a : Node, node_b : Node) -> Node:
-        new_node : Node = Operation.__call__(self)
+        new_name : str = f"matmul({node_a.name}, {node_b.name})"
+        new_node : Node = Operation.__call__(self, name=new_name)
         new_node.input_vals = [node_a, node_b]
         
         return new_node
@@ -195,9 +245,97 @@ def Variable(name : str) -> Node:
     return new_node
 
 placeholder_op = PlaceholderOperation()
+zeros_like_op = ZerosLikeOperation()
+ones_like_op = OnesLikeOperation()
 add_op = AddOperation()
 add_const_op = AddByConstOperation()
 mul_op = MulOperation()
 mul_const_op = MulByConstOperation()
 matmul_op = MatMulOperation()
 transpose_op = TransposeOperation()
+
+class Executor(object):
+    def __init__(self, 
+                 eval_node_list : List[Node]):
+        self.eval_node_list : List[Node] = eval_node_list
+        self.topo_sort_list : List[Node] = topology_sort(eval_node_list)
+    
+    def run(self, feed_dict : Dict[Node, ScalarType]) -> List[ScalarType]:
+        node_result_map : Dict[Node, ScalarType] = {}
+        for (node, node_val) in feed_dict.items():
+            node_result_map[node] = node_val
+        
+        for node in self.topo_sort_list:
+            if node in node_result_map:
+                continue
+            input_vals : List[ScalarType] = [
+                node_result_map[pred] for pred in node.input_vals
+            ]
+            print(f"forwarding : {node.name}")
+            print(input_vals)
+            node_val : ScalarType = node.op.compute(node, input_vals)
+            node_result_map[node] = node_val
+        
+        eval_result_list : List[ScalarType] = [
+            node_result_map[node]
+            for node in self.eval_node_list
+        ]
+        
+        return eval_result_list
+            
+
+def topology_sort(node_list : List[Node]) -> List[Node]:
+    visited : Dict[Node, bool] = {}
+    toposort_res : List[Node] = []
+
+    def dfs_topology_sort(node : Node,
+                        visited_map : Dict[Node, bool],
+                        topo_list : List[Node]):
+        if node in visited_map:
+            return
+        visited_map[node] = True
+        for pred in node.input_vals:
+            dfs_topology_sort(pred, visited_map, topo_list)
+        topo_list.append(node)
+
+    for node in node_list:
+        dfs_topology_sort(node, visited, toposort_res)
+    
+    return toposort_res
+
+
+def gradient(out_node : Node,
+             output_list : List[Node]) -> List[Node] :
+
+    node_grad_list_map : Dict[Node, List[Node]] = {}
+    node_grad_map : Dict[Node, Node] = {}
+
+    node_grad_list_map[out_node] = [ones_like_op(out_node)]
+
+    vertices : List[Node] = list(reversed(topology_sort([out_node])))
+    
+    for node in vertices:
+        out_grad : Node = grad_list_reduce(node_grad_list_map[node])
+        node_grad_map[node] = out_grad
+
+        if node in output_list:
+            continue
+
+        input_grads : List[Node] = node.op.gradient(node, out_grad)
+
+        for (pred, input_grad) in zip(node.input_vals, input_grads):
+            if pred not in node_grad_list_map:
+                node_grad_list_map[pred] = [input_grad]
+            else:
+                node_grad_list_map[pred].append(input_grad)
+
+    grad_output_list : List[Node] = [
+        node_grad_map[node] for node in output_list
+    ]
+    return grad_output_list
+
+
+def grad_list_reduce(grad_list : List[Node]) -> Node:
+    from operator import add
+    from functools import reduce
+    return reduce(add, grad_list)
