@@ -215,7 +215,7 @@ class TransposeOperation(Operation):
     def gradient(self,
                  ctx : Node,
                  out_grad : Node) -> List[Node]:
-        return [out_grad.transpose()]
+        return [transpose_op(out_grad)]
 
 
 class MatMulOperation(Operation):
