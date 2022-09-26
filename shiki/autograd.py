@@ -28,6 +28,18 @@ class Node(object):
         else:
             return add_op(self, rhs)
 
+    def __sub__(self, rhs) -> "Node":
+        if is_scalar_type(rhs):
+            return add_const_op(self, -1 * rhs)
+        else:
+            return add_op(self, mul_const_op(rhs, -1))
+
+    def __rsub__(self, lhs) -> "Node":
+        if is_scalar_type(lhs):
+            return add_const_op(mul_const_op(self, -1), lhs)
+        else:
+            return add_op(lhs, mul_const_op(self, -1))
+
     def __mul__(self, rhs) -> "Node":
         if is_scalar_type(rhs):
             return mul_const_op(self, rhs)
@@ -240,6 +252,63 @@ class MatMulOperation(Operation):
         grad_b : Node = matmul_op(transpose_op(node_a), out_grad)
         return [grad_a, grad_b]
 
+
+# TODO (cycloidz) : Softmax along arbitrary dimension.
+class SoftmaxOperation(Operation):
+    def __call__(self, 
+                 node_a : Node) -> Node:
+        new_name : str = f"Softmax({node_a.name})"
+        new_node : Node = Operation.__call__(self, name=new_name)
+        new_node.input_vals = [node_a]
+        return new_node
+    
+    def compute(self, 
+                ctx : Node,
+                input_vals : List[ScalarType]) -> ScalarType:
+        assert len(input_vals) == 1, "SoftmaxOperation : len of input list is not 1."
+        a_val : ScalarType = input_vals[0]
+        # TODO (cycloidz) : Substract min(or max?) along the dimension
+        # in case of underflow.
+        a_exp : ScalarType = np.exp(a_val)
+        a_dominator : ScalarType = np.sum(a_exp, axis=-1, keepdims=True)
+        a_softmax : ScalarType = a_exp / a_dominator
+        return  a_softmax
+
+    def gradient(self,
+                ctx : Node,
+                out_grad : Node) -> List[Node]:
+        node_a : Node = ctx.input_vals[0]
+        node_softmax : Node = softmax_op(node_a)
+        node_sum : Node = reduce_sum_op(out_grad * node_softmax, keepdims=True)
+        node_grad : Node = (out_grad - node_sum) * node_softmax
+        return [node_grad]
+
+
+class ReduceSumOperation(Operation):
+    def __call__(self, node_a : Node, keepdims : bool = True) -> Node:
+        # TODO(cycloidz) : the case keepdims = False.
+        assert keepdims == True, "ReduceSumOperation : keepdims == False is not supported so far."
+        new_name : str = f"ReduceSum({node_a.name})"
+        new_node : Node = Operation.__call__(self, name=new_name)
+        new_node.input_vals = [node_a]
+        new_node.keepdims = True
+
+        return new_node
+
+    def compute(self,
+                ctx : Node,
+                input_vals : List[ScalarType]) -> ScalarType:
+        val_a : ScalarType = input_vals[0]
+        return np.sum(val_a, axis=-1, keepdims=ctx.keepdims)
+
+    def gradient(self,
+                 ctx : Node,
+                 out_grad : Node) -> List[Node]:
+        node_a : Node = ctx.input_vals[0]
+        node_sum : Node = reduce_sum_op(out_grad, keepdims=True)
+        return [node_sum]
+        
+
 def Variable(name : str) -> Node:
     new_node = placeholder_op(name)
     return new_node
@@ -253,6 +322,8 @@ mul_op = MulOperation()
 mul_const_op = MulByConstOperation()
 matmul_op = MatMulOperation()
 transpose_op = TransposeOperation()
+softmax_op = SoftmaxOperation()
+reduce_sum_op = ReduceSumOperation()
 
 class Executor(object):
     def __init__(self, 

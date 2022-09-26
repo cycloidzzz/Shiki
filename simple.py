@@ -2,7 +2,7 @@ import numpy as np
 import shiki as sk
 import shiki.autograd as autograd
 
-if __name__ == "__main__":
+def test_mul_add():
     x = autograd.Variable("x")
     y = autograd.Variable("y")
     z = 2 * x + y
@@ -22,3 +22,23 @@ if __name__ == "__main__":
     })
 
     print(z_val)
+
+
+def test_softmax():
+    x = autograd.Variable("x")
+    y = autograd.softmax_op(x)
+
+    grad_x, = autograd.gradient(y, [x])
+
+    session : autograd.Executor = autograd.Executor([y, grad_x])
+
+    x_val = np.random.randn(3, 4)
+    y_val , grad_x_v = session.run(feed_dict = {x : x_val})
+
+    print(f"x_val = {x_val}, y_val = {y_val}")
+    print(f"gradient of x_val = {grad_x_v}")
+
+
+if __name__ == "__main__":
+    test_mul_add()
+    test_softmax()
