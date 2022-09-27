@@ -46,13 +46,25 @@ class Node(object):
         else:
             return mul_op(self, rhs)
 
+    def __div__(self, rhs) -> "Node":
+        if is_scalar_type(rhs):
+            return mul_const_op(self, 1/rhs)
+        else:
+            return divide_op(self, rhs)
+
+    def __rdiv__(self, lhs) -> "Node":
+        if is_scalar_type(lhs):
+            return mul_const_op(divide_op(ones_like_op(self), sefl), lhs)
+        else:
+            return divide_op(lhs, self)
+
     __radd__ = __add__
     __rmul__ = __mul__
 
 
 """
 Base class for Tensor Operation of Nodes, which does not hold any data.
-"""
+    """
 class Operation(ABC):
     def __call__(self, name: Optional[str] = None):
         new_node : Node = Node(name=name)
@@ -283,6 +295,81 @@ class SoftmaxOperation(Operation):
         node_grad : Node = (out_grad - node_sum) * node_softmax
         return [node_grad]
 
+class SoftmaxCrossEntropyOperation(Operation):
+    def __call__(self, 
+                logits : Node, 
+                labels : Node) -> Node:
+        new_name : str = f"SoftmaxCrossEntropy({logits.name}, {labels.name})"
+        new_node : Node = Operation.__call__(self, name=new_name)
+        new_node.input_vals = [logits, labels]
+        
+        return new_node
+
+    def compute(self,
+                ctx : Node,
+                input_vals : List[ScalarType]) -> ScalarType:
+        val_logits : ScalarType = input_vals[0]
+        val_labels : ScalarType = input_vals[1]
+        
+        val_log_softmax : ScalarType = val_logits - \
+            np.log(np.sum(np.exp(val_logits), axis=-1, keepdims=True))
+        return - val_log_softmax * val_labels
+
+    def gradient(self, 
+                 ctx : Node,
+                 out_grad : Node) -> List[Node]:
+        logits : Node = ctx.input_vals[0]
+        labels : Node = ctx.input_vals[1]
+
+        grad_logits : Node = labels * -1  +  reduce_sum_op(labels, keepdims=True) * softmax_op(logits)
+        grad_labels : Node = log_op(softmax_op(logits)) * -1
+        return [grad_logits, grad_labels]
+
+
+class LogOperation(Operation):
+    def __call__(self, node_a : Node) -> Node:
+        new_name : str = f"Log({node_a.name})"
+        new_node : Node = Operation.__call__(self, name=new_name)
+        new_node.input_vals = [node_a]
+        
+        return new_node
+
+    def compute(self,
+                ctx : Node,
+                input_vals : List[ScalarType]) -> ScalarType:
+        val_a : ScalarType = input_vals[0]
+        return np.log(val_a)
+
+    def gradient(self,
+                 ctx : Node,
+                 out_grad : Node) -> List[Node]:
+        node_a : Node = input_vals[0]
+        return [divide_op(ones_line_op(node_a), node_a)]
+
+
+class DivideOperation(Operation):
+    def __call__(self, node_a : Node, node_b : Node) -> Node:
+        new_name : str = f"({node_a.name}/{node_b.name})"
+        new_node : Node = Operation.__call__(self, name=new_name)
+        new_node.input_vals = [node_a, node_b]
+
+        return new_node
+
+    def compute(self,
+                ctx : Node,
+                input_vals : List[ScalarType]) -> ScalarType:
+        val_a : ScalarType = input_vals[0]
+        val_b : ScalarType = input_vals[1]
+        return val_a / val_b
+
+    def gradient(self,
+                 ctx : Node,
+                 out_grad : Node) -> List[Node]:
+        node_a, node_b = ctx.input_vals
+        grad_a : Node = out_grad / node_b
+        grad_b : Node = out_grad * (node_a / (node_b * node_b)) * -1
+        return [grad_a, grad_b]
+
 
 class ReduceSumOperation(Operation):
     def __call__(self, node_a : Node, keepdims : bool = True) -> Node:
@@ -307,7 +394,57 @@ class ReduceSumOperation(Operation):
         node_a : Node = ctx.input_vals[0]
         node_sum : Node = reduce_sum_op(out_grad, keepdims=True)
         return [node_sum]
-        
+
+
+class ExpandDimsOperation(Operation):
+    def __call__(self, 
+                 node_a : Node,
+                 axis : int = -1) -> Node:
+        new_name : str = f"ExpandDims({node_a.name})"
+        new_node : Node = Operation.__call__(self, name = new_name)
+        new_node.input_vals = [node_a]
+        new_node.axis = axis
+
+        return new_node
+
+    def compute(self, 
+                ctx : Node,
+                input_vals : List[ScalarType]) -> ScalarType:
+        assert len(input_vals) == 1, "ExpandDims : input list should contain exactly one value."
+        val_a : ScalarType = input_vals[0]
+        return np.expand_dims(val_a, axis=ctx.axis)
+
+    def gradient(self,
+                 ctx : Node,
+                 out_grad : Node) -> List[Node]:
+        grad_a : Node = squeeze_op(out_grad, axis=ctx.axis)
+        return [grad_a]
+
+
+class SqueezeOperation(Operation):
+    def __call__(self, 
+                 node_a : Node,
+                 axis : int = -1) -> Node:
+        new_name : str = f"Squeeze({node_a.name}, axis={axis})"
+        new_node : Node = Operation.__call__(self, name=new_name)
+        new_node.input_vals = [node_a]
+        new_node.axis = axis
+
+        return new_node
+
+    def compute(self,
+                ctx : Node,
+                input_vals : List[ScalarType]) -> ScalarType:
+        assert len(input_vals) == 1, "Squeeze : len(input_vals) should be 1."
+        val_a : ScalarType = input_vals[0]
+        return np.squeeze(val_a, axis=ctx.axis)
+
+    def gradient(self,
+                ctx : Node,
+                out_grad : Node) -> List[Node]:
+        grad_a : Node = expand_dims_op(out_grad, axis=ctx.axis)
+        return [grad_a]
+
 
 def Variable(name : str) -> Node:
     new_node = placeholder_op(name)
@@ -320,10 +457,15 @@ add_op = AddOperation()
 add_const_op = AddByConstOperation()
 mul_op = MulOperation()
 mul_const_op = MulByConstOperation()
+divide_op = DivideOperation()
 matmul_op = MatMulOperation()
 transpose_op = TransposeOperation()
 softmax_op = SoftmaxOperation()
+softmax_cross_entropy_with_logits_op = SoftmaxCrossEntropyOperation()
+log_op = LogOperation()
 reduce_sum_op = ReduceSumOperation()
+expand_dims_op = ExpandDimsOperation()
+squeeze_op = SqueezeOperation()
 
 class Executor(object):
     def __init__(self, 
