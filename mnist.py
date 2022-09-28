@@ -63,7 +63,7 @@ def softmax_classification(num_epochs : int,
     weight_v = np.random.randn(28 * 28, 10)
     bias_v = np.random.uniform(-1, 1, size=(10,))
 
-    g_w, g_b, g_x, g_l = tgd.gradient(loss, [weight, bias, x, labels])
+    g_w, g_b = tgd.gradient(loss, [weight, bias])
     executor = tgd.Executor([logits, loss, g_w, g_b])
 
     num_train : int = train_features.shape[0]
@@ -77,7 +77,7 @@ def softmax_classification(num_epochs : int,
         test_index_list : np.ndarray = np.arange(num_test)
         np.random.shuffle(batch_index_list)
 
-        train_acc : int = 0
+        train_acc : float = 0
         test_acc : float = 0
         for i in range(num_train_batch):
             start_idx : int = i * batch_size
@@ -131,7 +131,6 @@ def softmax_classification(num_epochs : int,
         test_acc = test_acc / num_test
         
         print(f"In epoch {epoch}, train accuracy = {train_acc}, test accuracy = {test_acc}")
-
 
 
 if __name__ == "__main__":

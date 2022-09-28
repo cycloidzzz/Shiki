@@ -531,7 +531,7 @@ def gradient(out_node : Node,
         out_grad : Node = grad_list_reduce(node_grad_list_map[node])
         node_grad_map[node] = out_grad
 
-        if node in output_list:
+        if isinstance(node.op, PlaceholderOperation):
             continue
 
         input_grads : List[Node] = node.op.gradient(node, out_grad)
