@@ -484,8 +484,8 @@ class Executor(object):
             input_vals : List[ScalarType] = [
                 node_result_map[pred] for pred in node.input_vals
             ]
-            print(f"forwarding : {node.name}")
-            print(input_vals)
+            #print(f"forwarding : {node.name}")
+            #print(input_vals)
             node_val : ScalarType = node.op.compute(node, input_vals)
             node_result_map[node] = node_val
         
