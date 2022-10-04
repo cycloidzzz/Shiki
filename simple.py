@@ -76,10 +76,26 @@ def test_softmax_cross_entropy_with_logits():
     print(f"x_v = {x_v}, y_v = {y_v}")
     print(f"loss_val = {loss_val}")
     print(f"gradient of x_val = {grad_x_val}")
-        
+
+def test_relu():
+    x = autograd.Variable("x")
+    y = autograd.relu_op(x)
+
+    x_val = np.random.randn(3, 4)
+    grad_x , = autograd.gradient(y, [x])
+    executor = autograd.Executor([y, grad_x])
+    y_v, grad_x_v = executor.run(
+        feed_dict = {
+            x : x_val
+        }
+    )
+    print(f"x = {x_val}")
+    print(f"y = {y_v}")
+    print(f"grad_x = {grad_x_v}")
 
 if __name__ == "__main__":
     test_mul_add()
     test_softmax()
     test_expand_squeeze()
     test_softmax_cross_entropy_with_logits()
+    test_relu()
