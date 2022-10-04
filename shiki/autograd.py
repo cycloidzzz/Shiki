@@ -54,7 +54,7 @@ class Node(object):
 
     def __rdiv__(self, lhs) -> "Node":
         if is_scalar_type(lhs):
-            return mul_const_op(divide_op(ones_like_op(self), sefl), lhs)
+            return mul_const_op(divide_op(ones_like_op(self), self), lhs)
         else:
             return divide_op(lhs, self)
 
@@ -98,7 +98,7 @@ class PlaceholderOperation(Operation):
     def gradient(self, 
                  ctx : Node,
                  out_grad : Node) -> List[Node]:
-        assert false, "Placeholder Op : Cannot calculate the gradient value for Placeholder Operation."
+        assert False, "Placeholder Op : Cannot calculate the gradient value for Placeholder Operation."
 
 
 class OnesLikeOperation(Operation):
@@ -127,7 +127,7 @@ class ZerosLikeOperation(Operation):
                 node_a : Node) -> Node:
         new_name : str = f"ZerosLike({node_a.name})"
         new_node : Node = Operation.__call__(self, name=new_name)
-        new_ndoe.input_vals : List[Node] = [node_a]
+        new_node.input_vals : List[Node] = [node_a]
         return new_node
 
     def compute(self,
@@ -295,6 +295,57 @@ class SoftmaxOperation(Operation):
         node_grad : Node = (out_grad - node_sum) * node_softmax
         return [node_grad]
 
+
+class GreaterOperation(Operation):
+    def __call__(self, 
+                 node_a : Node,
+                 value : Node) -> Node:
+        new_name : str = f"Greater({node_a.name}, {value})"
+        new_node : Node = Operation.__call__(self, name=new_name)
+        new_node.input_vals = [node_a]
+        new_node.value = value
+
+        return new_node
+
+    def compute(self,
+                ctx : Node,
+                input_vals : List[ScalarType]) -> ScalarType:
+        val_a : ScalarType = input_vals[0]
+        value : ScalarType = ctx.value
+        return (val_a > value)
+
+    def gradient(self,
+                 ctx : Node,
+                 out_grad : Node) -> List[Node]:
+        node_a : Node = ctx.input_vals[0]
+        grad_a : Node = zeros_like_op(node_a)
+        return [grad_a]
+
+
+class ReLUOperation(Operation):
+    def __call__(self, 
+                 node_a : Node) -> Node:
+        new_name : str = f"ReLU({node_a.name})"
+        new_node : Node = Operation.__call__(self, name=new_name)
+        new_node.input_vals = [node_a]
+        
+        return new_node
+
+    def compute(self,
+                ctx : Node,
+                input_vals : List[ScalarType]) -> ScalarType:
+        val_a : ScalarType = input_vals[0]
+        return val_a * (val_a > 0)
+
+    def gradient(self,
+                 ctx : Node,
+                 out_grad : Node) -> ScalarType:
+        node_a : Node = ctx.input_vals[0]
+        node_relu : Node = greater_op(node_a, 0)
+        grad_a : Node = node_relu * out_grad
+        return [grad_a]
+
+
 class SoftmaxCrossEntropyOperation(Operation):
     def __call__(self, 
                 logits : Node, 
@@ -343,8 +394,8 @@ class LogOperation(Operation):
     def gradient(self,
                  ctx : Node,
                  out_grad : Node) -> List[Node]:
-        node_a : Node = input_vals[0]
-        return [divide_op(ones_line_op(node_a), node_a)]
+        node_a : Node = ctx.input_vals[0]
+        return [divide_op(ones_like_op(node_a), node_a)]
 
 
 class DivideOperation(Operation):
@@ -466,6 +517,8 @@ log_op = LogOperation()
 reduce_sum_op = ReduceSumOperation()
 expand_dims_op = ExpandDimsOperation()
 squeeze_op = SqueezeOperation()
+greater_op = GreaterOperation()
+relu_op = ReLUOperation()
 
 class Executor(object):
     def __init__(self, 
